@@ -1,0 +1,95 @@
+const express = require("express");
+const bodyParser = require("body-parser");
+const sqlite3 = require("sqlite3").verbose();
+const nodemailer = require("nodemailer");
+const cors = require("cors");
+require("dotenv").config();
+
+const app = express();
+const port = 3000;
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Database setup
+const db = new sqlite3.Database(":memory:");
+
+// Create a table to store user data
+db.serialize(() => {
+    db.run(`
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            email TEXT,
+            otp TEXT
+        )
+    `);
+});
+
+// Generate OTP
+function generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Configure nodemailer for sending emails (if needed)
+const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+        user: process.env.EMAIL,
+        pass: process.env.EMAIL_PASSWORD
+    }
+});
+
+// Routes
+
+// Send OTP
+app.post("/send-otp", (req, res) => {
+    const { phone } = req.body;
+
+    if (!phone) {
+        return res.status(400).json({ message: "Phone number is required." });
+    }
+
+    const otp = generateOTP();
+
+    // Save OTP to the database
+    db.run("INSERT INTO users (phone, otp) VALUES (?, ?)", [phone, otp], function (err) {
+        if (err) {
+            return res.status(500).json({ message: "Database error." });
+        }
+
+        // Simulate sending OTP (you can integrate SMS APIs here)
+        console.log(`OTP sent to ${phone}: ${otp}`);
+
+        res.status(200).json({ message: "OTP sent successfully." });
+    });
+});
+
+// Verify OTP and Sign In
+app.post("/verify-otp", (req, res) => {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+        return res.status(400).json({ message: "Phone and OTP are required." });
+    }
+
+    // Check OTP in the database
+    db.get("SELECT * FROM users WHERE phone = ? AND otp = ?", [phone, otp], (err, row) => {
+        if (err) {
+            return res.status(500).json({ message: "Database error." });
+        }
+
+        if (row) {
+            res.status(200).json({ message: "Sign-in successful!", user: row });
+        } else {
+            res.status(400).json({ message: "Invalid OTP." });
+        }
+    });
+});
+
+// Start server
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
